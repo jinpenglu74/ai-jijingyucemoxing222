@@ -1,36 +1,44 @@
-# AI基金预测 V0.7 — AI经验闭环基础版
+# AI基金预测 V0.8 — 历史重演 / AI训练场版
 
-Windows x64 免安装基金预测工具。继续使用既有持久化目录：`D:\\AI基金预测\\`。
+V0.8 的核心目标：让预测系统开始用**真实冻结过的历史 World Snapshot**重新做预测，并在预测完成后才揭晓真实净值结果，构建可审计的历史训练闭环。
 
-## V0.7 新增
+## 这版做什么
 
-- AI经验库：`data\\experience_store_v1.bin`
-- AI复盘通过质量门控后自动提取经验
-- 同规则经验按 reusable_rule 指纹合并，避免重复污染
-- 经验评分与 ACTIVE / OBSERVE / RETIRED 状态
-- 预测前最多召回 5 条同基金或同类型高质量经验
-- DeepSeek Prompt 版本升级为 2，明确历史经验只能作为参考，不能覆盖当前 Snapshot 事实
-- 左侧“经验库”页面正式启用
-- 日志新增：`EXPERIENCE_EXTRACT`、`EXPERIENCE_SAVE`、`EXPERIENCE_INJECT`
+- 左侧“历史重演”页面正式启用。
+- 每次点击“运行下一历史重演”只运行 1 个历史案例，避免无意产生大量 API 消耗。
+- 只允许重演已经存在不可变 Snapshot 且至少有一个成熟判卷结果的历史预测。
+- DeepSeek 调用前只加载历史冻结 Snapshot 与当时已经可用的经验。
+- 模型六周期 JSON 校验通过后，才读取历史真实 NAV 进行自动判卷。
+- 自动进入独立的 replay AI复盘。
+- 自动形成独立的 replay 候选经验，不直接污染线上正式经验库。
 
-## 经验质量门控
+## 防未来泄漏
 
-以下复盘不会进入有效经验库：
+硬规则：
+1. `known_at <= replay_time`
+2. `experience_available_from <= replay_time`
 
-- 冻结 Snapshot 缺失
-- 幸运命中
-- reasoning_quality = UNSUPPORTED
-- evidence_score < 55
-- review_confidence < 55
-- D级复盘
+没有历史 Snapshot 的日期直接阻断，绝不使用当前数据伪造过去。历史真实结果不会进入模型请求。
 
-## 完整主链
+## replay 独立数据
 
-真实数据 → Quant → Data Gate → World Snapshot → DeepSeek六周期预测 → 预测档案 → 自动判卷 → AI复盘 → 经验提取 → 下一次预测召回。
+- `data\replay_prediction_archive_v1.bin`
+- `data\replay_judgments_v1.bin`
+- `data\replay_reviews_v1.bin`
+- `data\replay_experience_candidates_v1.bin`
+- `data\replay_experience_usage_v1.bin`
+- `data\replay_experience_conflict_v1.bin`
+- `data\replay_experience_baseline_v1.bin`
+- `data\replay_audit_v1.bin`
 
-## 构建
+所有历史训练数据与正式线上 prediction/judgment/review/experience 隔离。
 
-仓库保留 GitHub Actions 构建工作流：`.github/workflows/build-windows-exe.yml`。
-当前源码基线为 V0.6 ZIP + `v0.7/` overlay；`v0.7/apply_v07.py` 会在构建时生成完整 V0.7 源码。
+## 当前边界
 
-> AI输出仅用于研究与预测复盘，不构成投资建议。
+V0.8 不伪造多年历史证据。当前只能重演本软件过去真正冻结过的 Snapshot。更久历史需要下一阶段接入带时间戳的历史持仓、市场、宏观/新闻证据归档。
+
+## 下一版
+
+V0.8.1：历史证据扩展 + replay候选经验验证晋级。
+
+> 本软件只做概率研究、预测记录与复盘，不构成投资建议。
