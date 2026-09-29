@@ -1,44 +1,78 @@
-name: Build Windows EXE
+name: Build AI Fund Predictor V0.7
 
 on:
   workflow_dispatch:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
+    paths:
+      - 'v0.7/**'
+      - '.github/workflows/build-windows-exe.yml'
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build:
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        shell: powershell
+      - name: Install build tools
         run: |
-          python -m pip install --upgrade pip
-          if (Test-Path requirements.txt) { pip install -r requirements.txt }
-          pip install pyinstaller
+          sudo apt-get update
+          sudo apt-get install -y clang lld unzip zip
 
-      - name: Find entry and build
-        shell: powershell
+      - name: Prepare V0.6 baseline
+        shell: bash
         run: |
-          if (Test-Path main.py) {
-            pyinstaller --noconfirm --clean --onefile --name AI_Fund_Predictor main.py
-          } elseif (Test-Path app.py) {
-            pyinstaller --noconfirm --clean --onefile --name AI_Fund_Predictor app.py
-          } else {
-            Write-Error '未找到 main.py 或 app.py，请根据源码入口调整 workflow'
-          }
+          set -euo pipefail
+          SRC_ZIP="$(find . -maxdepth 1 -type f -name 'AI_Fund_Predictor_V0.6_Source*.zip' | head -n 1)"
+          test -n "$SRC_ZIP"
+          rm -rf buildsrc
+          mkdir -p buildsrc
+          unzip -q "$SRC_ZIP" -d buildsrc
+          python3 v0.7/apply_v07.py buildsrc
 
-      - name: Upload EXE
+      - name: Build Windows x64 EXE
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd buildsrc
+          chmod +x build_windows.sh
+          CLANG="$(command -v clang-cl)" LINK="$(command -v lld-link)" ./build_windows.sh
+          test -f "AI基金预测_V0.7_AI经验闭环基础版_免安装.exe"
+
+      - name: PE sanity check
+        shell: bash
+        run: |
+          set -euo pipefail
+          file "buildsrc/AI基金预测_V0.7_AI经验闭环基础版_免安装.exe"
+          llvm-objdump -p "buildsrc/AI基金预测_V0.7_AI经验闭环基础版_免安装.exe" | grep -E "kernel32.dll|user32.dll|gdi32.dll|winhttp.dll|crypt32.dll"
+
+      - name: Package EXE and source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifact
+          cp "buildsrc/AI基金预测_V0.7_AI经验闭环基础版_免安装.exe" "artifact/AI_Fund_Predictor_V0.7_Portable.exe"
+          (
+            cd buildsrc
+            zip -qr ../artifact/AI_Fund_Predictor_V0.7_Source.zip README.md build_windows.sh src tests
+          )
+          sha256sum artifact/AI_Fund_Predictor_V0.7_Portable.exe artifact/AI_Fund_Predictor_V0.7_Source.zip > artifact/SHA256.txt
+          cat > artifact/TEST_REPORT_V0.7.txt <<'EOF'
+AI基金预测 V0.7 GitHub Actions 构建报告
+PASS - V0.6 baseline extracted
+PASS - V0.7 experience overlay applied
+PASS - Windows x64 PE built with clang-cl/lld-link
+PASS - PE import sanity check
+PASS - Portable EXE packaged
+PASS - Source ZIP packaged
+EOF
+
+      - name: Upload V0.7 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AI_Fund_Predictor_Windows_EXE
-          path: dist/*.exe
+          name: AI_Fund_Predictor_V0.7
+          path: artifact/*
+          if-no-files-found: error
